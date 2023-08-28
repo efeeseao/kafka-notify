@@ -22,7 +22,7 @@ const (
 	KafkaServerAddress = "localhost:9092"
 )
 
-// ======================== HELPER FUNCTIONS ===================
+// ============== HELPER FUNCTIONS ==============
 var ErrNoMessagesFound = errors.New("no messages found")
 
 func getUserIDFromRequest(ctx *gin.Context) (string, error) {
@@ -30,11 +30,10 @@ func getUserIDFromRequest(ctx *gin.Context) (string, error) {
 	if userID == "" {
 		return "", ErrNoMessagesFound
 	}
-
 	return userID, nil
 }
 
-// ======================== NOTIFICATION STORAGE ===================
+// ====== NOTIFICATION STORAGE ======
 type UserNotifications map[string][]models.Notification
 
 type NotificationStore struct {
@@ -42,7 +41,8 @@ type NotificationStore struct {
 	mu   sync.RWMutex
 }
 
-func (ns *NotificationStore) Add(userID string, notification models.Notification) {
+func (ns *NotificationStore) Add(userID string,
+	notification models.Notification) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 	ns.data[userID] = append(ns.data[userID], notification)
@@ -54,22 +54,16 @@ func (ns *NotificationStore) Get(userID string) []models.Notification {
 	return ns.data[userID]
 }
 
-// ======================== KAFKA RELATED FUNCTIONS ===================
+// ============== KAFKA RELATED FUNCTIONS ==============
 type Consumer struct {
 	store *NotificationStore
-}
-
-// ConsumeClaim implements sarama.ConsumerGroupHandler.
-func (*Consumer) ConsumeClaim(sarama.ConsumerGroupSession, sarama.ConsumerGroupClaim) error {
-	panic("unimplemented")
 }
 
 func (*Consumer) Setup(sarama.ConsumerGroupSession) error   { return nil }
 func (*Consumer) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
-func (consumer *Consumer) ConsumerClain(
-	sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim,
-) error {
+func (consumer *Consumer) ConsumeClaim(
+	sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
 		userID := string(msg.Key)
 		var notification models.Notification
@@ -84,12 +78,11 @@ func (consumer *Consumer) ConsumerClain(
 	return nil
 }
 
-func initializeConsumer() (sarama.ConsumerGroup, error) {
+func initializeConsumerGroup() (sarama.ConsumerGroup, error) {
 	config := sarama.NewConfig()
 
 	consumerGroup, err := sarama.NewConsumerGroup(
-		[]string{KafkaServerAddress}, ConsumerGroup, config,
-	)
+		[]string{KafkaServerAddress}, ConsumerGroup, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize consumer group: %w", err)
 	}
@@ -98,11 +91,10 @@ func initializeConsumer() (sarama.ConsumerGroup, error) {
 }
 
 func setupConsumerGroup(ctx context.Context, store *NotificationStore) {
-	consumerGroup, err := initializeConsumer()
+	consumerGroup, err := initializeConsumerGroup()
 	if err != nil {
 		log.Printf("initialization error: %v", err)
 	}
-
 	defer consumerGroup.Close()
 
 	consumer := &Consumer{
@@ -120,7 +112,7 @@ func setupConsumerGroup(ctx context.Context, store *NotificationStore) {
 	}
 }
 
-func handlerNotifications(ctx *gin.Context, store *NotificationStore) {
+func handleNotifications(ctx *gin.Context, store *NotificationStore) {
 	userID, err := getUserIDFromRequest(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -131,7 +123,7 @@ func handlerNotifications(ctx *gin.Context, store *NotificationStore) {
 	if len(notes) == 0 {
 		ctx.JSON(http.StatusOK,
 			gin.H{
-				"message":       "No notification found for user",
+				"message":       "No notifications found for user",
 				"notifications": []models.Notification{},
 			})
 		return
@@ -152,10 +144,11 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 	router.GET("/notifications/:userID", func(ctx *gin.Context) {
-		handlerNotifications(ctx, store)
+		handleNotifications(ctx, store)
 	})
 
-	fmt.Printf("Kafka CONSUMER (Group: %s) 👥📥 "+"started at http://localhost%s\n", ConsumerGroup, ConsumerPort)
+	fmt.Printf("Kafka CONSUMER (Group: %s) 👥📥 "+
+		"started at http://localhost%s\n", ConsumerGroup, ConsumerPort)
 
 	if err := router.Run(ConsumerPort); err != nil {
 		log.Printf("failed to run the server: %v", err)
